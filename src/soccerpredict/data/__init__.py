@@ -6,7 +6,7 @@ from soccerpredict.data.teams import fetch_team_stats
 
 __all__ = [
     "fetch_matches",
+    "fetch_player_stats",
     "fetch_schedule",
     "fetch_team_stats",
-    "fetch_player_stats",
 ]

@@ -19,7 +19,7 @@ def fetch_team_stats(
     stat_type: str = "standard",
     source: str = "FBref",
     data_dir: Path | None = None,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Fetch season-aggregated team stats for a competition.
 
     ``stat_type`` mirrors soccerdata's FBref taxonomy: ``"standard"``,

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 
-def predict_match_outcome(model: "Pipeline", X: "pd.DataFrame") -> "pd.DataFrame":
+def predict_match_outcome(model: Pipeline, X: pd.DataFrame) -> pd.DataFrame:
     """Return a DataFrame with one probability column per class.
 
     Columns are named after the class labels stored on the fitted model

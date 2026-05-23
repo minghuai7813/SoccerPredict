@@ -20,12 +20,12 @@ log = get_logger(__name__)
 
 
 def compute_recent_form(
-    matches: "pd.DataFrame",
+    matches: pd.DataFrame,
     team_col: str = "team",
     date_col: str = "date",
     points_col: str = "points",
     window: int = 5,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Add a rolling ``form_{window}`` column = sum of points in the last
     ``window`` matches *before* the current one.
 
@@ -46,10 +46,10 @@ def compute_recent_form(
 
 
 def add_rest_days(
-    matches: "pd.DataFrame",
+    matches: pd.DataFrame,
     team_col: str = "team",
     date_col: str = "date",
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Add a ``rest_days`` column = days since the team's previous match."""
     df = matches.sort_values([team_col, date_col]).copy()
     df["rest_days"] = (
@@ -61,7 +61,7 @@ def add_rest_days(
     return df
 
 
-def build_match_features(matches_long: "pd.DataFrame") -> "pd.DataFrame":
+def build_match_features(matches_long: pd.DataFrame) -> pd.DataFrame:
     """Compose the default feature set for downstream modeling.
 
     Parameters

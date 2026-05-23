@@ -53,7 +53,7 @@ def fetch_schedule(
     season: str | int = 2022,
     source: str = "FBref",
     data_dir: Path | None = None,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Return the match schedule (fixtures + results when available)."""
     reader = _build_reader(source, competition, season, data_dir)
     df = reader.read_schedule()
@@ -66,7 +66,7 @@ def fetch_matches(
     season: str | int = 2022,
     source: str = "FBref",
     data_dir: Path | None = None,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Return per-match summary stats (goals, xG, possession, etc.).
 
     Falls back to schedule data when the configured source does not

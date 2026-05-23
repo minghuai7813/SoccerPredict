@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Sequence
+from collections.abc import Sequence
 
 from soccerpredict import __version__
 from soccerpredict.utils import get_logger, load_config

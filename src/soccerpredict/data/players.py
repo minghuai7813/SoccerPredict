@@ -19,7 +19,7 @@ def fetch_player_stats(
     stat_type: str = "standard",
     source: str = "FBref",
     data_dir: Path | None = None,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Fetch season-aggregated player stats for a competition."""
     import soccerdata as sd
 

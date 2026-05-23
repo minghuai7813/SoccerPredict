@@ -26,15 +26,15 @@ OUTCOME_CLASSES: tuple[str, ...] = ("home_win", "draw", "away_win")
 class TrainResult:
     """Container for a trained model plus headline metrics."""
 
-    model: "Pipeline"
+    model: Pipeline
     feature_names: list[str]
     accuracy: float
     log_loss: float
 
 
 def train_baseline(
-    X: "pd.DataFrame",
-    y: "pd.Series | np.ndarray",
+    X: pd.DataFrame,
+    y: pd.Series | np.ndarray,
     test_size: float = 0.2,
     random_state: int = 42,
 ) -> TrainResult:
