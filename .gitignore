@@ -28,6 +28,12 @@ oracle_mvp.db
 # Ruff cache
 .ruff_cache/
 
+# soccerdata cache (scraped FBref data)
+soccerdata/
+
+# Downloaded files
+downloaded_files/
+
 # Jupyter
 .ipynb_checkpoints/
 

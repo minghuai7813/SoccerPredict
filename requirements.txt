@@ -2,3 +2,7 @@ pandas
 sqlalchemy
 soccerdata
 statsbombpy
+thefuzz
+python-Levenshtein
+unidecode
+scikit-learn

@@ -63,10 +63,35 @@ class Player(Base):
         default=_generate_uuid,
         comment="UUID v4 primary key",
     )
-    full_name = Column(String(128), nullable=False, comment="Player full name")
+    full_name = Column(
+        String(128), nullable=False,
+        comment="Original full name as provided by the primary data source (may contain diacritics, CJK, Arabic, etc.)",
+    )
+    # ASCII transliteration of full_name, auto-generated via unidecode.
+    # full_name 的 ASCII 转写版本，由 unidecode 自动生成。
+    # 为什么需要？FBref 等外部数据源通常使用 ASCII 化的名字，
+    # 用 ASCII 名做模糊匹配能显著提高跨源匹配的准确率。
+    full_name_ascii = Column(
+        String(128), nullable=False,
+        comment="ASCII-transliterated full name for cross-source matching (auto-generated)",
+    )
+    # Human-friendly short display name (e.g. "Lionel Messi" instead of the full legal name).
+    # 人类可读的简短显示名（如 "Lionel Messi" 而非完整法定名）。
+    # 为什么 nullable？首次入库时可能只有全名，简称可以后续补充。
+    display_name = Column(
+        String(128), nullable=True,
+        comment="Short display name for UI and reports (nullable, can be populated later)",
+    )
     dob = Column(Date, nullable=True, comment="Date of birth")
     height_cm = Column(Float, nullable=True, comment="Height in centimeters")
     weight_kg = Column(Float, nullable=True, comment="Weight in kilograms")
+    # Primary playing position from FBref (GK / DF / MF / FW).
+    # 球员主要位置，来自 FBref（门将/后卫/中场/前锋）。
+    # 为什么用简写？FBref 返回的就是这几个缩写，保持一致减少转换开销。
+    position = Column(
+        String(16), nullable=True,
+        comment="Primary position code from FBref: GK, DF, MF, FW (may be comma-separated for multi-position)",
+    )
     current_club = Column(String(128), nullable=True, comment="Current club name")
     league_tier = Column(
         Integer,
@@ -106,6 +131,13 @@ class PlayerStatsLeague(Base):
         nullable=False,
         index=True,
         comment="FK to players.internal_player_id",
+    )
+
+    # Which season this row belongs to, e.g. "2021-2022".
+    # 这行数据属于哪个赛季，用于多赛季时序分析。
+    season = Column(
+        String(16), nullable=True, index=True,
+        comment="Season identifier, e.g. '2021-2022'",
     )
 
     # Snapshot timestamp: when this stat row was recorded / scraped.
@@ -152,6 +184,13 @@ class PlayerStatsNational(Base):
         nullable=False,
         index=True,
         comment="FK to players.internal_player_id",
+    )
+
+    # Which competition this data comes from (e.g. "FIFA World Cup 2018", "UEFA Euro 2020").
+    # 这行数据来自哪个赛事，用于区分不同来源的国家队统计。
+    competition = Column(
+        String(64), nullable=True, index=True,
+        comment="Competition name, e.g. 'FIFA World Cup 2018', 'UEFA Euro 2020'",
     )
 
     # Snapshot date for national team duty stats.
