@@ -1,30 +1,4 @@
-# Core data + ML
-numpy>=1.26
-pandas>=2.2
-scikit-learn>=1.5
-scipy>=1.13
-
-# Football data scraping
-# https://soccerdata.readthedocs.io/
-soccerdata>=1.8
-
-# Modeling / boosting
-xgboost>=2.1
-lightgbm>=4.5
-
-# Visualization
-matplotlib>=3.9
-seaborn>=0.13
-plotly>=5.24
-
-# Config / utilities
-pyyaml>=6.0
-python-dotenv>=1.0
-tqdm>=4.66
-loguru>=0.7
-
-# Notebook (optional but commonly used)
-jupyterlab>=4.2
-ipykernel>=6.29
-
-# Dev / quality (installed via requirements-dev.txt; listed here for convenience)
+pandas
+sqlalchemy
+soccerdata
+statsbombpy
