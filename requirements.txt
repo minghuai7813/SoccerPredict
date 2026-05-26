@@ -6,3 +6,9 @@ thefuzz
 python-Levenshtein
 unidecode
 scikit-learn
+xgboost
+shap
+scipy
+# Odds download (B): pip install oddsharvester && python -m playwright install chromium
+oddsharvester
+playwright

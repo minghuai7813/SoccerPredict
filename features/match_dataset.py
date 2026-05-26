@@ -1,17 +1,11 @@
 """
-Match-level dataset builder for the 2022 World Cup.
-2022 世界杯比赛级别数据集构造器。
+Multi-tournament match dataset builder.
+多赛事比赛数据集构造器。
 
-This module combines:
-  1. Match results from StatsBomb (who played whom, what was the score).
-  2. Team-level features from team_features.py (aggregated player stats).
-To produce a single flat DataFrame where each row is one match, with
-features for both home and away teams plus the actual result.
-本模块将 StatsBomb 的比赛结果与 team_features 的队级特征合并，
-生成每行代表一场比赛的扁平 DataFrame。
-
-This is the direct input to the prediction model.
-这是预测模型的直接输入。
+Combines matches from 2018 WC, Euro 2020, and 2022 WC into a single
+training dataset, with tournament-appropriate features for each.
+将 2018 世界杯、2020 欧洲杯、2022 世界杯的比赛合并为统一训练集，
+每个赛事使用对应的赛前特征。
 
 Usage / 用法:
     from features.match_dataset import build_match_dataset
@@ -23,6 +17,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from statsbombpy import sb
 
@@ -31,110 +26,253 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from features.team_features import build_team_feature_matrix
+from features.player_aggregation import positional_matchup_features
 
-COMPETITION_ID = 43
-SEASON_ID = 106
+# Tournament registry: each entry defines the data sources for one tournament.
+# 赛事注册表：每项定义该赛事的数据源。
+TOURNAMENTS = [
+    {
+        "name": "FIFA World Cup 2018",
+        "short": "WC2018",
+        "competition_id": 43,
+        "season_id": 3,
+        "elo_key": "wc2018",
+        "league_seasons": {
+            "2016-2017": 0.6,
+            "2017-2018": 1.0,
+        },
+        "latest_league_season": "2017-2018",
+        "prior_national_comps": [],
+    },
+    {
+        "name": "UEFA Euro 2020",
+        "short": "EURO2020",
+        "competition_id": 55,
+        "season_id": 43,
+        "elo_key": "euro2020",
+        "league_seasons": {
+            "2018-2019": 0.5,
+            "2019-2020": 0.75,
+            "2020-2021": 1.0,
+        },
+        "latest_league_season": "2020-2021",
+        "prior_national_comps": ["FIFA World Cup 2018"],
+    },
+    {
+        "name": "FIFA World Cup 2022",
+        "short": "WC2022",
+        "competition_id": 43,
+        "season_id": 106,
+        "elo_key": "wc2022",
+        "league_seasons": {
+            "2018-2019": 0.4,
+            "2019-2020": 0.6,
+            "2020-2021": 0.8,
+            "2021-2022": 1.0,
+        },
+        "latest_league_season": "2021-2022",
+        "prior_national_comps": ["FIFA World Cup 2018", "UEFA Euro 2020"],
+    },
+]
+
+KNOCKOUT_STAGES = {
+    "Round of 16", "Quarter-finals", "Semi-finals",
+    "Final", "3rd Place Final",
+}
 
 
-def _load_match_results() -> pd.DataFrame:
+def _extract_90min_score(match_id: int) -> dict:
     """
-    Pull all 2022 World Cup match results from StatsBomb.
-    从 StatsBomb 拉取 2022 世界杯所有比赛结果。
-
-    Returns a DataFrame with columns:
-      match_id, home_team, away_team, home_score, away_score, result.
-    result encoding: 1 = home win, 0 = draw, -1 = away win.
-    result 编码：1 = 主队赢, 0 = 平局, -1 = 客队赢。
+    Extract 90-min regulation score from StatsBomb event data.
+    从 StatsBomb 事件数据中提取 90 分钟常规时间比分。
     """
-    matches = sb.matches(competition_id=COMPETITION_ID, season_id=SEASON_ID)
+    import warnings
+    warnings.filterwarnings("ignore")
+
+    events = sb.events(match_id=match_id)
+    if events.empty:
+        return {}
+
+    goals = events[events["type"] == "Shot"]
+    if "shot_outcome" in goals.columns:
+        goals = goals[goals["shot_outcome"] == "Goal"]
+
+    periods = sorted(events["period"].unique())
+    has_et = any(p > 2 for p in periods)
+    has_pen = 5 in periods
+
+    def _count_goals_in_periods(goal_df, period_list):
+        subset = goal_df[goal_df["period"].isin(period_list)]
+        counts: dict[str, int] = {}
+        for _, g in subset.iterrows():
+            t = g.get("team", "")
+            if t:
+                counts[t] = counts.get(t, 0) + 1
+        return counts
+
+    return {
+        "team_reg_goals": _count_goals_in_periods(goals, [1, 2]),
+        "team_et_goals": _count_goals_in_periods(goals, [3, 4]),
+        "team_pen_goals": _count_goals_in_periods(goals, [5]),
+        "has_extra_time": has_et,
+        "has_penalties": has_pen,
+    }
+
+
+def _load_tournament_matches(
+    competition_id: int, season_id: int, tournament_name: str,
+) -> pd.DataFrame:
+    """
+    Load matches for a single tournament with 90-min score extraction.
+    加载单个赛事的比赛并提取 90 分钟比分。
+    """
+    matches = sb.matches(competition_id=competition_id, season_id=season_id)
 
     records = []
-    for _, row in matches.iterrows():
-        home = row["home_team"]
-        away = row["away_team"]
-        h_score = int(row["home_score"])
-        a_score = int(row["away_score"])
+    knockout_ids = []
 
-        if h_score > a_score:
-            result = 1
-        elif h_score < a_score:
-            result = -1
-        else:
-            result = 0
+    for _, row in matches.iterrows():
+        stage = row.get("competition_stage", "Group Stage")
+        is_ko = stage in KNOCKOUT_STAGES
+        mid = row["match_id"]
+        if is_ko:
+            knockout_ids.append((mid, row))
 
         records.append({
-            "match_id": row["match_id"],
-            "home_team": home,
-            "away_team": away,
-            "home_score": h_score,
-            "away_score": a_score,
-            "result": result,
-            "goal_diff": h_score - a_score,
+            "match_id": mid,
+            "home_team": row["home_team"],
+            "away_team": row["away_team"],
+            "home_score_full": int(row["home_score"]),
+            "away_score_full": int(row["away_score"]),
+            "stage": stage,
+            "is_knockout": is_ko,
+            "tournament": tournament_name,
         })
 
-    return pd.DataFrame(records)
+    df = pd.DataFrame(records)
+    df["home_score_90"] = df["home_score_full"]
+    df["away_score_90"] = df["away_score_full"]
+    df["went_to_et"] = False
+    df["went_to_penalties"] = False
+    df["qualifier"] = ""
+
+    if knockout_ids:
+        print(f"    Extracting 90-min scores for {len(knockout_ids)} knockout matches...")
+        for mid, row in knockout_ids:
+            home, away = row["home_team"], row["away_team"]
+            ev = _extract_90min_score(mid)
+            if not ev:
+                continue
+
+            mask = df["match_id"] == mid
+            df.loc[mask, "home_score_90"] = ev["team_reg_goals"].get(home, 0)
+            df.loc[mask, "away_score_90"] = ev["team_reg_goals"].get(away, 0)
+            df.loc[mask, "went_to_et"] = ev["has_extra_time"]
+            df.loc[mask, "went_to_penalties"] = ev["has_penalties"]
+
+            h_full, a_full = int(row["home_score"]), int(row["away_score"])
+            if h_full > a_full:
+                qual = home
+            elif a_full > h_full:
+                qual = away
+            else:
+                h_pen = ev["team_pen_goals"].get(home, 0)
+                a_pen = ev["team_pen_goals"].get(away, 0)
+                qual = home if h_pen > a_pen else away
+            df.loc[mask, "qualifier"] = qual
+
+    # Labels based on 90-min score.
+    df["result"] = df.apply(
+        lambda r: 1 if r["home_score_90"] > r["away_score_90"]
+        else (-1 if r["home_score_90"] < r["away_score_90"] else 0),
+        axis=1,
+    )
+    df["goal_diff"] = df["home_score_90"] - df["away_score_90"]
+    df["home_score"] = df["home_score_90"]
+    df["away_score"] = df["away_score_90"]
+
+    return df
 
 
 def build_match_dataset() -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
     """
-    Build the full match dataset: features + labels.
-    构建完整的比赛数据集：特征 + 标签。
-
-    For each match, we create a feature vector by concatenating the home
-    team's features and the away team's features (prefixed with "home_"
-    and "away_"). We also add a "diff_" feature set = home - away for
-    each numeric feature, which helps the model learn relative strength.
-    每场比赛的特征向量 = 主队特征 + 客队特征 + 差值特征。
-    差值特征 = 主队 - 客队，帮助模型学习相对实力。
+    Build combined multi-tournament dataset.
+    构建多赛事合并数据集。
 
     Returns
     -------
-    X : pd.DataFrame
-        Feature matrix, one row per match.
-    y : pd.Series
-        Labels: 1 (home win), 0 (draw), -1 (away win).
-    meta : pd.DataFrame
-        Match metadata (match_id, team names, scores) for reference.
+    X : pd.DataFrame   — Feature matrix (NaN for missing features)
+    y : pd.Series       — Labels (1/0/-1 based on 90-min score)
+    meta : pd.DataFrame — Match metadata
     """
-    print("[Dataset] Loading match results from StatsBomb...")
-    match_df = _load_match_results()
-    print(f"  Found {len(match_df)} matches.")
+    all_X = []
+    all_meta = []
 
-    print("[Dataset] Building team feature matrix...")
-    team_features = build_team_feature_matrix()
-    feature_cols = team_features.columns.tolist()
-    print(f"  {len(feature_cols)} features per team.")
+    for t in TOURNAMENTS:
+        print(f"\n[Dataset] === {t['name']} ===")
+        print(f"  Loading matches...")
+        match_df = _load_tournament_matches(
+            t["competition_id"], t["season_id"], t["name"],
+        )
+        print(f"  {len(match_df)} matches loaded.")
 
-    # For each match, look up home and away team features.
-    # 对每场比赛，查找主队和客队的特征。
-    rows = []
-    valid_matches = []
+        print(f"  Building team features...")
+        team_features = build_team_feature_matrix(
+            competition_id=t["competition_id"],
+            season_id=t["season_id"],
+            elo_key=t["elo_key"],
+            league_seasons=t["league_seasons"] or None,
+            latest_league_season=t["latest_league_season"],
+            prior_national_comps=t["prior_national_comps"] or None,
+        )
+        feature_cols = team_features.columns.tolist()
 
-    for _, match in match_df.iterrows():
-        home = match["home_team"]
-        away = match["away_team"]
+        rows = []
+        valid_matches = []
 
-        if home not in team_features.index or away not in team_features.index:
-            print(f"  [SKIP] Missing features for {home} vs {away}")
-            continue
+        for _, match in match_df.iterrows():
+            home, away = match["home_team"], match["away_team"]
+            if home not in team_features.index or away not in team_features.index:
+                continue
 
-        home_feats = team_features.loc[home]
-        away_feats = team_features.loc[away]
+            home_f = team_features.loc[home]
+            away_f = team_features.loc[away]
+            home_d = home_f.to_dict()
+            away_d = away_f.to_dict()
+            row = {}
+            for col in feature_cols:
+                row[f"home_{col}"] = home_f[col]
+                row[f"away_{col}"] = away_f[col]
+                hv = home_f[col] if pd.notna(home_f[col]) else np.nan
+                av = away_f[col] if pd.notna(away_f[col]) else np.nan
+                row[f"diff_{col}"] = hv - av if pd.notna(hv) and pd.notna(av) else np.nan
 
-        row = {}
-        for col in feature_cols:
-            row[f"home_{col}"] = home_feats[col]
-            row[f"away_{col}"] = away_feats[col]
-            row[f"diff_{col}"] = home_feats[col] - away_feats[col]
+            for mk, mv in positional_matchup_features(home_d, away_d).items():
+                row[mk] = mv
 
-        rows.append(row)
-        valid_matches.append(match)
+            rows.append(row)
+            valid_matches.append(match)
 
-    X = pd.DataFrame(rows)
-    meta = pd.DataFrame(valid_matches).reset_index(drop=True)
+        if rows:
+            X_t = pd.DataFrame(rows)
+            meta_t = pd.DataFrame(valid_matches).reset_index(drop=True)
+            all_X.append(X_t)
+            all_meta.append(meta_t)
+            print(f"  -> {len(X_t)} matches with features.")
+
+    X = pd.concat(all_X, ignore_index=True)
+    meta = pd.concat(all_meta, ignore_index=True)
     y = meta["result"]
 
-    print(f"\n[Dataset] Final dataset: {len(X)} matches × {X.shape[1]} features.")
+    n_nan = X.isna().sum().sum()
+    n_total = X.shape[0] * X.shape[1]
+    pct_available = (1 - n_nan / n_total) * 100
+
+    print(f"\n[Dataset] Combined: {len(X)} matches x {X.shape[1]} features")
+    print(f"  Data availability: {pct_available:.1f}%")
+    for t_name in meta["tournament"].unique():
+        t_mask = meta["tournament"] == t_name
+        print(f"  {t_name}: {t_mask.sum()} matches")
     print(f"  Label distribution: {dict(y.value_counts())}")
 
     return X, y, meta
@@ -146,7 +284,7 @@ if __name__ == "__main__":
 
     X, y, meta = build_match_dataset()
     print("\n" + "=" * 70)
-    print("Sample matches:")
-    print(meta[["home_team", "away_team", "home_score", "away_score", "result"]].head(10).to_string())
-    print(f"\nFeature matrix shape: {X.shape}")
-    print(f"Features: {list(X.columns[:10])} ...")
+    print(f"Final shape: {X.shape}")
+    print(f"NaN per column (top 10):")
+    nan_counts = X.isna().sum().sort_values(ascending=False)
+    print(nan_counts.head(10).to_string())

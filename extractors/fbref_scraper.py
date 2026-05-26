@@ -83,9 +83,11 @@ TARGET_LEAGUES = [
     "FRA-Ligue 1",
 ]
 
-# Four seasons spanning the inter-WC cycle (Russia 2018 → Qatar 2022).
-# 两届世界杯之间完整的四个联赛赛季，用于提取球员的纵向发展趋势。
+# League seasons: pre-2018 WC through pre-2022 WC.
+# 联赛赛季：2018 世界杯赛前 → 2022 世界杯赛前。
 TARGET_SEASONS = [
+    "2016-2017",
+    "2017-2018",
     "2018-2019",
     "2019-2020",
     "2020-2021",
@@ -95,6 +97,8 @@ TARGET_SEASONS = [
 # Season end dates for as_of_date (approximate end of each European season).
 # 每个赛季的结束日期，用作 as_of_date 时间戳。
 SEASON_END_DATES = {
+    "2016-2017": date(2017, 6, 1),
+    "2017-2018": date(2018, 6, 1),
     "2018-2019": date(2019, 6, 1),
     "2019-2020": date(2020, 8, 1),
     "2020-2021": date(2021, 6, 1),

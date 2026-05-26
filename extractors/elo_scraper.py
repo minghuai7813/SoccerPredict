@@ -1,94 +1,171 @@
 """
-Pre-tournament Elo rating loader for 2022 World Cup teams.
-2022 世界杯参赛队赛前 Elo 评分加载器。
+Pre-tournament Elo rating loader using historical CSV data.
+基于历史 CSV 数据的赛前 Elo 评分加载器。
 
-Why Elo? 为什么用 Elo？
-Elo 是量化国家队历史实力的最有效单一指标。
-它综合了数十年的比赛结果，远比单届赛事统计可靠。
-单独使用 Elo 就能预测 55-60% 的世界杯比赛结果。
+Source: JGravier/soccer-elo (eloratings.net year-end snapshots 1901-2023).
+数据来源：JGravier/soccer-elo（eloratings.net 年终快照 1901-2023）。
 
-Source: eloratings.net pre-tournament ratings (Nov 2022).
-数据来源：eloratings.net 赛前评分（2022 年 11 月）。
-
-Since eloratings.net may be hard to scrape reliably, we hardcode
-the official pre-WC 2022 Elo ratings here. These are well-documented
-public data that doesn't change.
-由于 eloratings.net 可能不稳定，我们直接硬编码赛前 Elo。
-这些是公开的历史数据，不会变化。
+We use the year-end snapshot BEFORE each tournament as the pre-tournament Elo:
+  - 2018 WC (Jun 2018) → use 2017 year-end ratings
+  - Euro 2020 (Jun 2021) → use 2020 year-end ratings
+  - 2022 WC (Nov 2022) → use 2021 year-end ratings
+每个赛事使用其开赛前的年终 Elo 快照：
+  2018 世界杯 → 2017 年终；欧洲杯 2020 → 2020 年终；2022 世界杯 → 2021 年终。
 
 Usage / 用法:
-    from extractors.elo_scraper import get_pre_wc_elo
-    elo = get_pre_wc_elo()
-    # Returns dict: team_name → {"elo": int, "rank": int, "confederation": str}
+    from extractors.elo_scraper import get_pre_tournament_elo
+    elo = get_pre_tournament_elo("wc2022")
 """
 
 from __future__ import annotations
 
-# Pre-tournament Elo ratings as of Nov 20, 2022 (day before WC started).
-# Confederation codes: UEFA, CONMEBOL, CONCACAF, CAF, AFC, OFC.
-# 2022 年 11 月 20 日（世界杯开幕前一天）的 Elo 评分。
-# 赛区代码：欧足联/南美/中北美/非洲/亚洲/大洋洲。
-_PRE_WC_2022_ELO: dict[str, dict] = {
-    "Brazil": {"elo": 2169, "confederation": "CONMEBOL"},
-    "Argentina": {"elo": 2143, "confederation": "CONMEBOL"},
-    "France": {"elo": 2048, "confederation": "UEFA"},
-    "Belgium": {"elo": 2007, "confederation": "UEFA"},
-    "England": {"elo": 1969, "confederation": "UEFA"},
-    "Netherlands": {"elo": 1964, "confederation": "UEFA"},
-    "Spain": {"elo": 1945, "confederation": "UEFA"},
-    "Portugal": {"elo": 1935, "confederation": "UEFA"},
-    "Denmark": {"elo": 1921, "confederation": "UEFA"},
-    "Germany": {"elo": 1900, "confederation": "UEFA"},
-    "Croatia": {"elo": 1883, "confederation": "UEFA"},
-    "Uruguay": {"elo": 1878, "confederation": "CONMEBOL"},
-    "Switzerland": {"elo": 1868, "confederation": "UEFA"},
-    "Mexico": {"elo": 1861, "confederation": "CONCACAF"},
-    "United States": {"elo": 1843, "confederation": "CONCACAF"},
-    "Senegal": {"elo": 1837, "confederation": "CAF"},
-    "Serbia": {"elo": 1825, "confederation": "UEFA"},
-    "Poland": {"elo": 1814, "confederation": "UEFA"},
-    "Morocco": {"elo": 1808, "confederation": "CAF"},
-    "Japan": {"elo": 1798, "confederation": "AFC"},
-    "South Korea": {"elo": 1786, "confederation": "AFC"},
-    "Australia": {"elo": 1756, "confederation": "AFC"},
-    "Canada": {"elo": 1745, "confederation": "CONCACAF"},
-    "Tunisia": {"elo": 1738, "confederation": "CAF"},
-    "Ecuador": {"elo": 1736, "confederation": "CONMEBOL"},
-    "Iran": {"elo": 1735, "confederation": "AFC"},
-    "Wales": {"elo": 1717, "confederation": "UEFA"},
-    "Ghana": {"elo": 1703, "confederation": "CAF"},
-    "Cameroon": {"elo": 1698, "confederation": "CAF"},
-    "Costa Rica": {"elo": 1691, "confederation": "CONCACAF"},
-    "Qatar": {"elo": 1662, "confederation": "AFC"},
-    "Saudi Arabia": {"elo": 1654, "confederation": "AFC"},
+from pathlib import Path
+
+import pandas as pd
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_CSV_PATH = _PROJECT_ROOT / "data" / "elo_ratings_1901_2023.csv"
+
+# Tournament key → (snapshot_year, participating_team_list_or_None)
+# If team list is None, return all teams for that year.
+# 赛事 key → (快照年份, 参赛队列表或 None)
+_TOURNAMENT_CONFIG = {
+    "wc2018": {"year": 2017},
+    "euro2020": {"year": 2020},
+    "wc2022": {"year": 2021},
+}
+
+# StatsBomb uses specific team names; CSV may use different ones.
+# This mapping normalizes CSV names to StatsBomb names.
+# StatsBomb 用特定队名；CSV 可能不同。此映射统一到 StatsBomb 命名。
+_NAME_MAP = {
+    "USA": "United States",
+    "South Korea": "South Korea",
+    "Korea Republic": "South Korea",
+    "Ivory Coast": "Côte d'Ivoire",
+    "Czech Republic": "Czech Republic",
+    "Czechia": "Czech Republic",
+    "IR Iran": "Iran",
+    "Korea DPR": "North Korea",
+    "China PR": "China",
+    "Cape Verde Islands": "Cape Verde",
+    "Curaçao": "Curacao",
+}
+
+# Confederation assignment based on common knowledge.
+# 基于常识的洲际联盟分配。
+_CONFEDERATION_BY_TEAM = {
+    "Argentina": "CONMEBOL", "Brazil": "CONMEBOL", "Uruguay": "CONMEBOL",
+    "Colombia": "CONMEBOL", "Chile": "CONMEBOL", "Peru": "CONMEBOL",
+    "Ecuador": "CONMEBOL", "Paraguay": "CONMEBOL", "Venezuela": "CONMEBOL",
+    "Bolivia": "CONMEBOL",
+
+    "Mexico": "CONCACAF", "United States": "CONCACAF", "Costa Rica": "CONCACAF",
+    "Canada": "CONCACAF", "Panama": "CONCACAF", "Honduras": "CONCACAF",
+    "Jamaica": "CONCACAF", "Trinidad and Tobago": "CONCACAF",
+    "El Salvador": "CONCACAF", "Curacao": "CONCACAF",
+
+    "Japan": "AFC", "South Korea": "AFC", "Iran": "AFC",
+    "Australia": "AFC", "Saudi Arabia": "AFC", "Qatar": "AFC",
+    "Iraq": "AFC", "Uzbekistan": "AFC", "China": "AFC",
+    "United Arab Emirates": "AFC", "Oman": "AFC", "Bahrain": "AFC",
+    "Jordan": "AFC", "Syria": "AFC", "Palestine": "AFC",
+    "India": "AFC", "Thailand": "AFC", "Vietnam": "AFC",
+    "Indonesia": "AFC",
+
+    "Nigeria": "CAF", "Cameroon": "CAF", "Ghana": "CAF",
+    "Senegal": "CAF", "Morocco": "CAF", "Tunisia": "CAF",
+    "Egypt": "CAF", "Algeria": "CAF", "South Africa": "CAF",
+    "Côte d'Ivoire": "CAF", "Mali": "CAF", "Burkina Faso": "CAF",
+    "DR Congo": "CAF", "Congo": "CAF", "Guinea": "CAF",
+    "Cape Verde": "CAF", "Gabon": "CAF", "Equatorial Guinea": "CAF",
+    "Zambia": "CAF", "Zimbabwe": "CAF", "Uganda": "CAF",
+    "Kenya": "CAF", "Tanzania": "CAF", "Mozambique": "CAF",
+    "Namibia": "CAF", "Angola": "CAF", "Benin": "CAF",
+    "Togo": "CAF", "Niger": "CAF",
+
+    "New Zealand": "OFC",
 }
 
 
-def get_pre_wc_elo() -> dict[str, dict]:
-    """
-    Return pre-WC 2022 Elo ratings with rank computed from rating order.
-    返回 2022 世界杯赛前 Elo 评分，排名由评分从高到低计算。
+def _load_csv() -> pd.DataFrame:
+    """Load and cache the Elo CSV."""
+    if not _CSV_PATH.exists():
+        raise FileNotFoundError(
+            f"Elo CSV not found at {_CSV_PATH}. "
+            "Run: python -c \"import urllib.request; "
+            "urllib.request.urlretrieve("
+            "'https://raw.githubusercontent.com/JGravier/soccer-elo/main/"
+            "csv/ranking_soccer_1901-2023.csv', 'data/elo_ratings_1901_2023.csv')\""
+        )
+    return pd.read_csv(_CSV_PATH)
 
-    Returns dict: team_name → {"elo": int, "rank": int, "confederation": str}
+
+def _normalize_name(name: str) -> str:
+    """Normalize team name to match StatsBomb conventions."""
+    return _NAME_MAP.get(name, name)
+
+
+def _guess_confederation(team: str) -> str:
+    """Guess confederation from team name. Default to UEFA for European teams."""
+    if team in _CONFEDERATION_BY_TEAM:
+        return _CONFEDERATION_BY_TEAM[team]
+    return "UEFA"
+
+
+def get_pre_tournament_elo(tournament_key: str = "wc2022") -> dict[str, dict]:
     """
-    sorted_teams = sorted(
-        _PRE_WC_2022_ELO.items(),
-        key=lambda x: x[1]["elo"],
-        reverse=True,
-    )
+    Return pre-tournament Elo ratings from CSV data.
+    从 CSV 数据返回赛前 Elo 评分。
+
+    Parameters
+    ----------
+    tournament_key : str
+        One of "wc2018", "euro2020", "wc2022".
+
+    Returns
+    -------
+    dict: team_name → {"elo": int, "rank": int, "confederation": str}
+    """
+    config = _TOURNAMENT_CONFIG.get(tournament_key)
+    if config is None:
+        raise ValueError(f"Unknown tournament: {tournament_key}. "
+                         f"Available: {list(_TOURNAMENT_CONFIG.keys())}")
+
+    df = _load_csv()
+    year_data = df[df["year"] == config["year"]].copy()
+
+    if year_data.empty:
+        raise ValueError(f"No data for year {config['year']} in CSV.")
+
+    year_data["team"] = year_data["team"].apply(_normalize_name)
+    year_data = year_data.sort_values("rating", ascending=False).reset_index(drop=True)
+
     result = {}
-    for rank, (team, data) in enumerate(sorted_teams, 1):
+    for idx, row in year_data.iterrows():
+        team = row["team"]
         result[team] = {
-            "elo": data["elo"],
-            "rank": rank,
-            "confederation": data["confederation"],
+            "elo": int(row["rating"]),
+            "rank": int(row["rank"]),
+            "confederation": _guess_confederation(team),
         }
+
     return result
 
 
+def get_pre_wc_elo() -> dict[str, dict]:
+    """Backward-compatible alias for 2022 WC Elo."""
+    return get_pre_tournament_elo("wc2022")
+
+
 if __name__ == "__main__":
-    elo = get_pre_wc_elo()
-    print(f"{'Rank':<5} {'Team':<20} {'Elo':<6} {'Confederation'}")
-    print("-" * 50)
-    for team, data in sorted(elo.items(), key=lambda x: x[1]["rank"]):
-        print(f"{data['rank']:<5} {team:<20} {data['elo']:<6} {data['confederation']}")
+    for key in ["wc2018", "euro2020", "wc2022"]:
+        elo = get_pre_tournament_elo(key)
+        config = _TOURNAMENT_CONFIG[key]
+        print(f"\n{'='*55}")
+        print(f" {key.upper()} (year-end {config['year']}) — {len(elo)} teams")
+        print(f"{'='*55}")
+        sorted_teams = sorted(elo.items(), key=lambda x: x[1]["elo"], reverse=True)
+        for team, data in sorted_teams[:15]:
+            print(f"  {data['rank']:<4} {team:<25} {data['elo']:<6} {data['confederation']}")
+        print(f"  ... ({len(elo)} total)")

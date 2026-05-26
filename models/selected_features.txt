@@ -1,0 +1,37 @@
+# Selected features from SHAP analysis
+# Top 25 + 6 interactions
+
+# Base features:
+home_elo_rating
+diff_elo_rating
+home_elo_rank
+diff_elo_rank
+away_elo_rank
+away_elo_rating
+diff_conf_UEFA
+diff_lg_goal_involvement_weighted
+diff_lg_assists_weighted
+diff_lg_player_count
+diff_lg_minutes_weighted
+diff_lg_goals_weighted
+away_conf_UEFA
+diff_pos_fw_goals
+home_lg_minutes_weighted
+home_star_top3_xg
+home_pos_fw_goals
+diff_lg_goals_max
+home_lg_player_count
+away_lg_goals_weighted
+diff_star_xg_gini
+away_lg_minutes_weighted
+home_star_xg_gini
+away_nt_w_tackles_won
+diff_star_top3_xg
+
+# Interaction features:
+ix_elo_x_lg_goals
+ix_elo_x_lg_involve
+ix_elo_rank_spread
+ix_elo_x_conf
+ix_elo_gap_sq
+ix_underdog_form

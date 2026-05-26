@@ -204,12 +204,42 @@ class PlayerStatsNational(Base):
     xg = Column(Float, nullable=True, comment="Expected goals (xG)")
     goals = Column(Integer, nullable=True, comment="Goals scored")
     assists = Column(Integer, nullable=True, comment="Assists")
+    shots = Column(Integer, nullable=True, comment="Shots")
+    shots_on_target = Column(Integer, nullable=True, comment="Shots on target")
     passes_completed = Column(Integer, nullable=True, comment="Passes completed")
     passes_attempted = Column(Integer, nullable=True, comment="Passes attempted")
+    key_passes = Column(Integer, nullable=True, comment="Shot-assist passes")
+    through_balls = Column(Integer, nullable=True, comment="Through balls")
+    crosses = Column(Integer, nullable=True, comment="Crosses")
+    progressive_passes = Column(Integer, nullable=True, comment="Progressive passes")
+    dribble_attempts = Column(Integer, nullable=True, comment="Dribble attempts")
+    dribble_success = Column(Integer, nullable=True, comment="Successful dribbles")
+    carries_count = Column(Integer, nullable=True, comment="Carries")
+    progressive_carry_distance = Column(
+        Float, nullable=True, comment="Sum of progressive carry distances",
+    )
     interceptions = Column(Integer, nullable=True, comment="Interceptions")
+    blocks = Column(Integer, nullable=True, comment="Blocks")
+    clearances = Column(Integer, nullable=True, comment="Clearances")
+    aerial_duels_won = Column(Integer, nullable=True, comment="Aerial duels won")
+    aerial_duels_lost = Column(Integer, nullable=True, comment="Aerial duels lost")
+    ball_recoveries = Column(Integer, nullable=True, comment="Ball recoveries")
+    fouls_committed = Column(Integer, nullable=True, comment="Fouls committed")
+    fouls_won = Column(Integer, nullable=True, comment="Fouls won")
+    tackle_attempts = Column(Integer, nullable=True, comment="Tackle attempts")
     tackles_won = Column(Integer, nullable=True, comment="Tackles won")
+    pressures = Column(Integer, nullable=True, comment="Pressures")
+    counter_pressures = Column(Integer, nullable=True, comment="Counter-pressures")
+    actions_under_pressure = Column(Integer, nullable=True, comment="Actions under pressure")
+    yellow_cards = Column(Integer, nullable=True, comment="Yellow cards")
+    red_cards = Column(Integer, nullable=True, comment="Red cards")
+    goalkeeper_saves = Column(Integer, nullable=True, comment="Goalkeeper saves")
     caps = Column(Integer, nullable=True, comment="Total international caps as of date")
     minutes_played = Column(Integer, nullable=True, comment="Minutes played")
+    is_starter = Column(
+        Integer, nullable=True,
+        comment="1 if regular starter in tournament (>=50% starts), else 0",
+    )
 
     player = relationship("Player", back_populates="national_stats")
 

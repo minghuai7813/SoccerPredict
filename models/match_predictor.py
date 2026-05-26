@@ -1,21 +1,9 @@
 """
-World Cup match outcome predictor with market alpha analysis.
-世界杯比赛结果预测器，含市场 alpha 分析。
+Multi-tournament match predictor with model comparison.
+多赛事比赛预测器——多模型对比版。
 
-Model design / 模型设计:
-  - Task 1: 3-class classification (home win / draw / away win).
-    任务 1：三分类（主队赢 / 平局 / 客队赢）。
-  - Task 2: Regression (predict goal difference).
-    任务 2：回归（预测净胜球）。
-  - Task 3: Alpha analysis — compare model vs Elo-based "market" prediction.
-    任务 3：Alpha 分析——对比模型与 Elo 基准（市场共识）的分歧。
-    If we predict the same as Elo (market), we have no edge.
-    如果我们和 Elo（市场）预测一致，说明没有优势。
-    Value exists only where we DISAGREE with the market AND are correct.
-    价值只存在于我们与市场意见不同、且我们是对的地方。
-
-  - Algorithm: Random Forest (baseline).
-  - Evaluation: Leave-One-Out cross-validation.
+Trains on 2018 WC + Euro 2020 + 2022 WC combined (179 matches).
+基于 2018 世界杯 + 2020 欧洲杯 + 2022 世界杯合并数据（179 场）训练。
 
 Usage / 用法:
     python -m models.match_predictor
@@ -28,274 +16,311 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import PoissonRegressor
 from sklearn.model_selection import LeaveOneOut, cross_val_predict
 from sklearn.metrics import accuracy_score, classification_report, mean_absolute_error
 from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
+from xgboost import XGBClassifier
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+LABEL_MAP = {1: "Home Win", 0: "Draw", -1: "Away Win"}
+LABEL_TO_XGB = {-1: 0, 0: 1, 1: 2}
+XGB_TO_LABEL = {0: -1, 1: 0, 2: 1}
+
+
+def _elo_predict(home_team: str, away_team: str, elo_data: dict) -> tuple[int, float]:
+    """Elo prediction with ~60 neutral-venue advantage."""
+    ra = elo_data.get(home_team, {}).get("elo", 1500)
+    rb = elo_data.get(away_team, {}).get("elo", 1500)
+    prob = 1.0 / (1.0 + 10 ** ((rb - ra - 60) / 400.0))
+    if prob > 0.45:
+        return 1, prob
+    elif prob < 0.35:
+        return -1, prob
+    return 0, prob
+
+
+def _poisson_result_probs(lh: float, la: float, max_g: int = 7) -> dict[int, float]:
+    """P(home win), P(draw), P(away win) from Poisson parameters."""
+    from scipy.stats import poisson
+    mat = np.zeros((max_g + 1, max_g + 1))
+    for i in range(max_g + 1):
+        for j in range(max_g + 1):
+            mat[i, j] = poisson.pmf(i, lh) * poisson.pmf(j, la)
+    return {1: np.triu(mat, k=1).sum(), 0: np.trace(mat), -1: np.tril(mat, k=-1).sum()}
+
 
 def train_and_evaluate() -> dict:
-    """
-    End-to-end: build dataset → train model → evaluate via LOO-CV.
-    端到端：构建数据集 → 训练模型 → 通过 LOO-CV 评估。
-
-    Returns
-    -------
-    dict
-        Evaluation metrics and the trained model artifacts.
-    """
     from features.match_dataset import build_match_dataset
+    from extractors.elo_scraper import get_pre_tournament_elo
 
-    print("=" * 60)
-    print("  PROJECT ORACLE — Match Predictor v0.1 (Baseline)")
-    print("=" * 60)
+    print("=" * 65)
+    print("  PROJECT ORACLE — Match Predictor v0.4")
+    print("  (Multi-tournament: 2018 WC + Euro 2020 + 2022 WC)")
+    print("=" * 65)
 
     X, y, meta = build_match_dataset()
-
     if X.empty:
-        print("[Model] No data to train on. Aborting.")
+        print("[Model] No data. Aborting.")
         return {}
-
-    # Replace any remaining NaN/inf with 0 (defensive).
-    # 防御性处理：把残余的 NaN/inf 替换为 0。
-    X = X.replace([np.inf, -np.inf], 0).fillna(0)
 
     feature_names = X.columns.tolist()
 
-    # Scale features — important for interpretation and some algorithms.
-    # 标准化特征——对解释性和某些算法很重要。
+    # Prepare two versions of X:
+    # X_imp: NaN -> median (for RF, Poisson)
+    # X_nan: keep NaN (XGBoost handles natively)
+    # 两版特征矩阵：填充版（RF/Poisson）和原始版（XGBoost 原生处理 NaN）。
+    imputer = SimpleImputer(strategy="median")
+    X_imp = pd.DataFrame(
+        imputer.fit_transform(X), columns=feature_names, index=X.index,
+    )
+    X_imp = X_imp.replace([np.inf, -np.inf], 0)
+
+    X_nan = X.replace([np.inf, -np.inf], np.nan)
+
     scaler = StandardScaler()
     X_scaled = pd.DataFrame(
-        scaler.fit_transform(X),
-        columns=feature_names,
-        index=X.index,
-    )
-
-    # ----------------------------------------------------------------
-    # Task 1: Classification (home win / draw / away win)
-    # 任务 1：三分类
-    # ----------------------------------------------------------------
-    print("\n" + "-" * 60)
-    print("[Task 1] 3-Class Classification (Home Win / Draw / Away Win)")
-    print("-" * 60)
-
-    clf = RandomForestClassifier(
-        n_estimators=200,
-        max_depth=5,
-        min_samples_leaf=3,
-        random_state=42,
-        class_weight="balanced",
+        scaler.fit_transform(X_imp), columns=feature_names, index=X.index,
     )
 
     loo = LeaveOneOut()
-    y_pred_clf = cross_val_predict(clf, X_scaled, y, cv=loo)
+    n_matches = len(X)
 
-    acc = accuracy_score(y, y_pred_clf)
-    print(f"\n  LOO-CV Accuracy: {acc:.1%}")
-    print(f"  (Random baseline for 3-class: ~33.3%)")
+    # ================================================================
+    # MODEL A: Random Forest
+    # ================================================================
+    print("\n" + "=" * 65)
+    print("[Model A] Random Forest")
+    print("=" * 65)
+
+    rf = RandomForestClassifier(
+        n_estimators=300, max_depth=6, min_samples_leaf=4,
+        random_state=42, class_weight="balanced",
+    )
+    y_pred_rf = cross_val_predict(rf, X_scaled, y, cv=loo)
+    acc_rf = accuracy_score(y, y_pred_rf)
+    print(f"  LOO-CV Accuracy: {acc_rf:.1%}")
+
+    # ================================================================
+    # MODEL B: XGBoost (handles NaN natively)
+    # ================================================================
+    print("\n" + "=" * 65)
+    print("[Model B] XGBoost")
+    print("=" * 65)
+
+    y_xgb = y.map(LABEL_TO_XGB)
+
+    xgb = XGBClassifier(
+        n_estimators=300,
+        max_depth=4,
+        learning_rate=0.03,
+        subsample=0.8,
+        colsample_bytree=0.7,
+        min_child_weight=4,
+        reg_alpha=1.5,
+        reg_lambda=3.0,
+        objective="multi:softprob",
+        num_class=3,
+        eval_metric="mlogloss",
+        random_state=42,
+        verbosity=0,
+    )
+
+    y_pred_xgb_raw = cross_val_predict(xgb, X_nan, y_xgb, cv=loo)
+    y_pred_xgb = pd.Series(y_pred_xgb_raw).map(XGB_TO_LABEL).values
+    acc_xgb = accuracy_score(y, y_pred_xgb)
+    print(f"  LOO-CV Accuracy: {acc_xgb:.1%}")
     print(f"\n  Classification Report:")
-    label_map = {1: "Home Win", 0: "Draw", -1: "Away Win"}
     print(classification_report(
-        y, y_pred_clf,
-        target_names=[label_map[l] for l in sorted(y.unique())],
+        y, y_pred_xgb,
+        target_names=[LABEL_MAP[l] for l in sorted(y.unique())],
         zero_division=0,
     ))
 
-    # Show some example predictions.
-    # 展示一些预测示例。
-    meta_display = meta[["home_team", "away_team", "home_score", "away_score"]].copy()
-    meta_display["actual"] = y.map(label_map)
-    meta_display["predicted"] = pd.Series(y_pred_clf).map(label_map)
-    meta_display["correct"] = (y.values == y_pred_clf)
+    # ================================================================
+    # MODEL C: Poisson Regression
+    # ================================================================
+    print("=" * 65)
+    print("[Model C] Poisson Regression")
+    print("=" * 65)
 
-    print("  Sample Predictions (first 15 matches):")
-    print(meta_display.head(15).to_string(index=False))
+    y_home_g = meta["home_score"].values.astype(float)
+    y_away_g = meta["away_score"].values.astype(float)
+    X_pos = X_imp.clip(lower=0)
 
-    wrong = meta_display[~meta_display["correct"]]
-    print(f"\n  Incorrect predictions: {len(wrong)}/{len(meta_display)}")
+    ph = PoissonRegressor(alpha=1.0, max_iter=1000)
+    pa = PoissonRegressor(alpha=1.0, max_iter=1000)
+    pred_hg = np.clip(cross_val_predict(ph, X_pos, y_home_g, cv=loo), 0.1, 6.0)
+    pred_ag = np.clip(cross_val_predict(pa, X_pos, y_away_g, cv=loo), 0.1, 6.0)
 
-    # ----------------------------------------------------------------
-    # Task 2: Regression (predict goal difference)
-    # 任务 2：回归（预测净胜球）
-    # ----------------------------------------------------------------
-    print("\n" + "-" * 60)
-    print("[Task 2] Regression (Predict Goal Difference)")
-    print("-" * 60)
+    y_pred_poi = np.array([
+        max(_poisson_result_probs(pred_hg[i], pred_ag[i]), key=lambda k: _poisson_result_probs(pred_hg[i], pred_ag[i])[k])
+        for i in range(n_matches)
+    ])
+    acc_poi = accuracy_score(y, y_pred_poi)
+    print(f"  LOO-CV Accuracy (W/D/L): {acc_poi:.1%}")
+    print(f"  MAE home goals: {mean_absolute_error(y_home_g, pred_hg):.2f}")
+    print(f"  MAE away goals: {mean_absolute_error(y_away_g, pred_ag):.2f}")
 
-    y_reg = meta["goal_diff"]
-    reg = RandomForestRegressor(
-        n_estimators=200,
-        max_depth=5,
-        min_samples_leaf=3,
-        random_state=42,
-    )
+    # ================================================================
+    # Elo baseline (per-tournament Elo)
+    # ================================================================
+    elo_map = {
+        "FIFA World Cup 2018": "wc2018",
+        "UEFA Euro 2020": "euro2020",
+        "FIFA World Cup 2022": "wc2022",
+    }
+    elo_caches = {k: get_pre_tournament_elo(v) for k, v in elo_map.items()}
 
-    y_pred_reg = cross_val_predict(reg, X_scaled, y_reg, cv=loo)
-    mae = mean_absolute_error(y_reg, y_pred_reg)
-    print(f"\n  LOO-CV MAE (Mean Absolute Error): {mae:.2f} goals")
+    elo_preds = np.array([
+        _elo_predict(
+            meta.iloc[i]["home_team"],
+            meta.iloc[i]["away_team"],
+            elo_caches[meta.iloc[i]["tournament"]],
+        )[0]
+        for i in range(n_matches)
+    ])
+    acc_elo = accuracy_score(y, elo_preds)
 
-    # Derive classification from predicted goal diff and measure accuracy.
-    # 从预测净胜球反推胜平负分类，测量准确率。
-    y_pred_from_reg = pd.Series(y_pred_reg).apply(
-        lambda x: 1 if x > 0.5 else (-1 if x < -0.5 else 0)
-    )
-    acc_from_reg = accuracy_score(y, y_pred_from_reg)
-    print(f"  Derived classification accuracy: {acc_from_reg:.1%}")
+    # ================================================================
+    # COMPARISON TABLE
+    # ================================================================
+    print("\n" + "=" * 65)
+    print("[Comparison] All Models — LOO-CV Accuracy")
+    print("=" * 65)
 
-    # ----------------------------------------------------------------
-    # Feature importance (from a final full-data fit)
-    # 特征重要性（从全量数据训练中提取）
-    # ----------------------------------------------------------------
-    print("\n" + "-" * 60)
-    print("[Feature Importance] Top 15 (from full-data Random Forest)")
-    print("-" * 60)
+    models = [
+        ("Elo (market)", acc_elo, elo_preds),
+        ("Random Forest", acc_rf, y_pred_rf),
+        ("XGBoost", acc_xgb, y_pred_xgb),
+        ("Poisson (W/D/L)", acc_poi, y_pred_poi),
+    ]
 
-    clf.fit(X_scaled, y)
-    importances = pd.Series(clf.feature_importances_, index=feature_names)
-    top_features = importances.sort_values(ascending=False).head(15)
-    for feat, imp in top_features.items():
-        bar = "█" * int(imp * 200)
-        print(f"  {feat:<40s} {imp:.4f}  {bar}")
+    gs_mask = ~meta["is_knockout"].values
+    ko_mask = meta["is_knockout"].values
 
-    # ----------------------------------------------------------------
-    # Task 3: Alpha analysis — model vs Elo "market" baseline
-    # 任务 3：Alpha 分析——模型 vs Elo "市场"基准
-    # ----------------------------------------------------------------
-    print("\n" + "-" * 60)
-    print("[Task 3] Alpha Analysis: Our Model vs Market (Elo Baseline)")
-    print("-" * 60)
+    # Per-tournament breakdown.
+    tournaments = meta["tournament"].unique()
 
-    from extractors.elo_scraper import get_pre_wc_elo
-    elo_data = get_pre_wc_elo()
+    header = f"  {'Model':<20s} {'Overall':>8s}"
+    sep = f"  {'-'*20} {'-'*8}"
+    for t in tournaments:
+        short = t.split()[-1][:6]
+        header += f" {short:>8s}"
+        sep += f" {'-'*8}"
+    header += f" {'Group':>8s} {'KO':>8s}"
+    sep += f" {'-'*8} {'-'*8}"
 
-    # Elo win-probability formula: E(A) = 1 / (1 + 10^((Rb-Ra)/400))
-    # Elo 胜率公式：基于两队 Elo 差计算期望胜率。
-    # We split into 3 classes using thresholds derived from WC draw rate (~23%).
-    # 根据世界杯平局率（约 23%）设定阈值拆分为三类。
-    def elo_predict(home_team: str, away_team: str) -> int:
-        ra = elo_data.get(home_team, {}).get("elo", 1500)
-        rb = elo_data.get(away_team, {}).get("elo", 1500)
-        home_win_prob = 1.0 / (1.0 + 10 ** ((rb - ra) / 400.0))
-        # ~60 Elo points of home advantage in neutral-venue WC.
-        # 世界杯中立场地约 60 Elo 点的主场优势。
-        home_win_prob_adj = 1.0 / (1.0 + 10 ** ((rb - ra - 60) / 400.0))
-        if home_win_prob_adj > 0.45:
-            return 1
-        elif home_win_prob_adj < 0.35:
-            return -1
-        else:
-            return 0
+    print(f"\n{header}")
+    print(sep)
 
-    def elo_win_prob(home_team: str, away_team: str) -> float:
-        ra = elo_data.get(home_team, {}).get("elo", 1500)
-        rb = elo_data.get(away_team, {}).get("elo", 1500)
-        return 1.0 / (1.0 + 10 ** ((rb - ra - 60) / 400.0))
+    for name, overall, preds in models:
+        line = f"  {name:<20s} {overall:>7.1%}"
+        for t in tournaments:
+            t_mask = (meta["tournament"] == t).values
+            t_acc = accuracy_score(y[t_mask], preds[t_mask]) if t_mask.sum() else 0
+            line += f" {t_acc:>7.1%}"
+        gs_acc = accuracy_score(y[gs_mask], preds[gs_mask]) if gs_mask.sum() else 0
+        ko_acc = accuracy_score(y[ko_mask], preds[ko_mask]) if ko_mask.sum() else 0
+        line += f" {gs_acc:>7.1%} {ko_acc:>7.1%}"
+        print(line)
 
-    elo_preds = []
-    elo_probs = []
-    for _, m in meta.iterrows():
-        elo_preds.append(elo_predict(m["home_team"], m["away_team"]))
-        elo_probs.append(elo_win_prob(m["home_team"], m["away_team"]))
+    best_name, best_acc, best_preds = max(models[1:], key=lambda x: x[1])
+    print(f"\n  >>> Best model: {best_name} ({best_acc:.1%})")
 
-    elo_preds = np.array(elo_preds)
-    elo_acc = accuracy_score(y, elo_preds)
+    # ================================================================
+    # ALPHA ANALYSIS (best model vs Elo)
+    # ================================================================
+    print("\n" + "=" * 65)
+    print(f"[Alpha] {best_name} vs Elo Market")
+    print("=" * 65)
 
-    # Get our model's LOO predicted probabilities.
-    # 获取我们模型的 LOO 预测概率。
-    y_pred_proba = cross_val_predict(clf, X_scaled, y, cv=loo, method="predict_proba")
-    model_classes = sorted(y.unique())
-    home_win_idx = model_classes.index(1) if 1 in model_classes else -1
+    edge = best_acc - acc_elo
+    sign = "+" if edge > 0 else ""
+    print(f"\n  Overall: Model {best_acc:.1%} vs Elo {acc_elo:.1%} = {sign}{edge:.1%}")
 
-    print(f"\n  Elo-only accuracy:    {elo_acc:.1%}  (= market consensus baseline)")
-    print(f"  Our model accuracy:   {acc:.1%}")
-    edge = acc - elo_acc
-    if edge > 0:
-        print(f"  Model edge:           +{edge:.1%}  (we beat the market)")
-    elif edge < 0:
-        print(f"  Model edge:           {edge:.1%}  (market is better)")
-    else:
-        print(f"  Model edge:           0%  (no difference)")
+    agree = (elo_preds == best_preds)
+    disagree_mask = ~agree
+    disagree_n = disagree_mask.sum()
 
-    # Build comparison table.
-    # 构建对比表。
-    alpha_df = meta[["home_team", "away_team", "home_score", "away_score"]].copy()
-    alpha_df["actual"] = y.map(label_map).values
-    alpha_df["elo_pred"] = pd.Series(elo_preds).map(label_map).values
-    alpha_df["model_pred"] = pd.Series(y_pred_clf).map(label_map).values
-    alpha_df["elo_home_prob"] = [f"{p:.0%}" for p in elo_probs]
+    if disagree_n > 0:
+        model_wins = ((y.values == best_preds) & disagree_mask).sum()
+        elo_wins = ((y.values == elo_preds) & disagree_mask).sum()
+        both_wrong = disagree_n - model_wins - elo_wins
+        print(f"\n  Agreement: {agree.sum()}/{n_matches}")
+        print(f"  Disagreements: {disagree_n}/{n_matches}")
+        print(f"    Model right: {model_wins} | Elo right: {elo_wins} | Both wrong: {both_wrong}")
+        if model_wins > elo_wins:
+            print(f"    >>> ALPHA confirmed ({model_wins}:{elo_wins})")
 
-    if home_win_idx >= 0:
-        alpha_df["model_home_prob"] = [f"{p[home_win_idx]:.0%}" for p in y_pred_proba]
+    # Upset detection.
+    elo_wrong = (y.values != elo_preds)
+    caught = ((y.values == best_preds) & elo_wrong)
+    print(f"\n  Upsets (Elo wrong): {elo_wrong.sum()}/{n_matches}")
+    print(f"  Model caught: {caught.sum()}/{elo_wrong.sum()}")
 
-    alpha_df["elo_correct"] = (y.values == elo_preds)
-    alpha_df["model_correct"] = (y.values == y_pred_clf)
-    alpha_df["agree"] = (elo_preds == y_pred_clf)
+    # ================================================================
+    # KNOCKOUT QUALIFIER (2022 WC only)
+    # ================================================================
+    wc22_ko = meta[(meta["tournament"] == "FIFA World Cup 2022") & meta["is_knockout"]]
+    if len(wc22_ko) > 0:
+        print("\n" + "=" * 65)
+        print("[2022 WC Knockout] Qualifier Prediction")
+        print("=" * 65)
 
-    # Disagreement analysis — where the model differs from market.
-    # 分歧分析——模型和市场意见不同的比赛。
-    disagree = alpha_df[~alpha_df["agree"]]
-    agree = alpha_df[alpha_df["agree"]]
+        elo22 = elo_caches["FIFA World Cup 2022"]
+        qual_ours, qual_elo = [], []
+        for idx in wc22_ko.index:
+            home, away = meta.loc[idx, "home_team"], meta.loc[idx, "away_team"]
+            elo_h = elo22.get(home, {}).get("elo", 1500)
+            elo_a = elo22.get(away, {}).get("elo", 1500)
 
-    print(f"\n  Agreement with market: {len(agree)}/64 matches ({len(agree)/64:.0%})")
-    print(f"  Disagreements:         {len(disagree)}/64 matches")
+            p = best_preds[idx]
+            if p == 1:
+                qual_ours.append(home)
+            elif p == -1:
+                qual_ours.append(away)
+            else:
+                qual_ours.append(home if elo_h >= elo_a else away)
 
-    if len(disagree) > 0:
-        model_right_on_disagree = disagree["model_correct"].sum()
-        elo_right_on_disagree = disagree["elo_correct"].sum()
-        neither = len(disagree) - model_right_on_disagree - elo_right_on_disagree
-        both_wrong_count = len(disagree) - model_right_on_disagree - elo_right_on_disagree
+            qual_elo.append(home if elo_h >= elo_a else away)
 
-        print(f"\n  On disagreements ({len(disagree)} matches):")
-        print(f"    Model correct, market wrong:  {model_right_on_disagree}")
-        print(f"    Market correct, model wrong:  {elo_right_on_disagree}")
-        print(f"    Both wrong:                   {both_wrong_count}")
+        actual_q = wc22_ko["qualifier"].values
+        our_c = sum(p == a for p, a in zip(qual_ours, actual_q))
+        elo_c = sum(p == a for p, a in zip(qual_elo, actual_q))
+        n_ko = len(qual_ours)
+        print(f"  Model: {our_c}/{n_ko} ({our_c/n_ko:.1%}) | Elo: {elo_c}/{n_ko} ({elo_c/n_ko:.1%})")
 
-        if model_right_on_disagree > elo_right_on_disagree:
-            print(f"    >>> Our model has ALPHA on disagreements!")
-        elif model_right_on_disagree < elo_right_on_disagree:
-            print(f"    >>> Market wins on disagreements (no alpha yet)")
-        else:
-            print(f"    >>> Tied on disagreements")
+    # ================================================================
+    # Feature importance
+    # ================================================================
+    print("\n" + "=" * 65)
+    print("[Feature Importance] Top 15")
+    print("=" * 65)
 
-        # Show the disagreement matches.
-        # 展示分歧比赛。
-        print(f"\n  Disagreement matches (model vs market):")
-        cols = ["home_team", "away_team", "actual", "elo_pred",
-                "model_pred", "elo_home_prob"]
-        if "model_home_prob" in disagree.columns:
-            cols.append("model_home_prob")
-        cols += ["model_correct"]
-        print(disagree[cols].to_string(index=False))
+    xgb.fit(X_nan, y_xgb)
+    importances = pd.Series(xgb.feature_importances_, index=feature_names)
+    top15 = importances.sort_values(ascending=False).head(15)
+    for feat, imp in top15.items():
+        bar = "\u2588" * int(imp * 200)
+        print(f"  {feat:<42s} {imp:.4f}  {bar}")
 
-    # Upset detection — matches where the favorite lost.
-    # 冷门检测——热门输了的比赛。
-    print(f"\n  --- Upset Detection (Dark Horses) ---")
-    upsets = alpha_df[~alpha_df["elo_correct"]].copy()
-    print(f"  Elo got {len(upsets)} matches wrong (potential upsets).")
-    model_caught = upsets[upsets["model_correct"]]
-    print(f"  Our model correctly predicted {len(model_caught)}/{len(upsets)} of these upsets:")
-    if len(model_caught) > 0:
-        cols = ["home_team", "away_team", "actual", "elo_pred", "model_pred"]
-        print(model_caught[cols].to_string(index=False))
-
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 65)
     print("  Analysis complete.")
-    print("=" * 60)
+    print("=" * 65)
 
     return {
-        "accuracy_clf": acc,
-        "accuracy_elo": elo_acc,
-        "mae_reg": mae,
-        "accuracy_from_reg": acc_from_reg,
-        "top_features": top_features,
-        "classifier": clf,
-        "regressor": reg,
-        "scaler": scaler,
-        "alpha_df": alpha_df,
+        "accuracy_rf": acc_rf,
+        "accuracy_xgb": acc_xgb,
+        "accuracy_poisson": acc_poi,
+        "accuracy_elo": acc_elo,
+        "best_model": best_name,
+        "n_matches": n_matches,
     }
 
 
