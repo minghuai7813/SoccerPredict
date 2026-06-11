@@ -1,0 +1,154 @@
+PROJECT ORACLE — Feature Catalog
+============================================================
+Match matrix: 179 rows x 188 columns
+
+Naming: most team stats appear as home_*, away_*, diff_*
+(diff = home - away). Matchup_* are match-level only.
+
+## Elo / 大洲 (7 base names)
+  elo_rating
+    -> home_elo_rating, away_elo_rating, diff_elo_rating
+  elo_rank
+    -> home_elo_rank, away_elo_rank, diff_elo_rank
+  conf_UEFA
+    -> home_conf_UEFA, away_conf_UEFA, diff_conf_UEFA
+  conf_CONMEBOL
+    -> home_conf_CONMEBOL, away_conf_CONMEBOL, diff_conf_CONMEBOL
+  conf_CONCACAF
+    -> home_conf_CONCACAF, away_conf_CONCACAF, diff_conf_CONCACAF
+  conf_CAF
+    -> home_conf_CAF, away_conf_CAF, diff_conf_CAF
+  conf_AFC
+    -> home_conf_AFC, away_conf_AFC, diff_conf_AFC
+
+## 联赛 (FBref, 加权) (10 base names)
+  lg_goals_weighted
+    -> home_lg_goals_weighted, away_lg_goals_weighted, diff_lg_goals_weighted
+  lg_assists_weighted
+    -> home_lg_assists_weighted, away_lg_assists_weighted, diff_lg_assists_weighted
+  lg_minutes_weighted
+    -> home_lg_minutes_weighted, away_lg_minutes_weighted, diff_lg_minutes_weighted
+  lg_goal_involvement_weighted
+    -> home_lg_goal_involvement_weighted, away_lg_goal_involvement_weighted, diff_lg_goal_involvement_weighted
+  lg_player_count
+    -> home_lg_player_count, away_lg_player_count, diff_lg_player_count
+  lg_seasons_available
+    -> home_lg_seasons_available, away_lg_seasons_available, diff_lg_seasons_available
+  lg_goals_per90
+    -> home_lg_goals_per90, away_lg_goals_per90, diff_lg_goals_per90
+  lg_goals_max
+    -> home_lg_goals_max, away_lg_goals_max, diff_lg_goals_max
+  lg_goal_trend
+    -> home_lg_goal_trend, away_lg_goal_trend, diff_lg_goal_trend
+  lg_consistency
+    -> home_lg_consistency, away_lg_consistency, diff_lg_consistency
+
+## 联赛阵容结构 (5 base names)
+  pos_fw_ratio
+    -> home_pos_fw_ratio, away_pos_fw_ratio, diff_pos_fw_ratio
+  pos_mf_ratio
+    -> home_pos_mf_ratio, away_pos_mf_ratio, diff_pos_mf_ratio
+  pos_df_ratio
+    -> home_pos_df_ratio, away_pos_df_ratio, diff_pos_df_ratio
+  pos_fw_goals
+    -> home_pos_fw_goals, away_pos_fw_goals, diff_pos_fw_goals
+  pos_mf_goals
+    -> home_pos_mf_goals, away_pos_mf_goals, diff_pos_mf_goals
+
+## 国家队聚合 (StatsBomb 事件, 加权) (21 base names)
+  nt_competitions_count
+    -> home_nt_competitions_count, away_nt_competitions_count, diff_nt_competitions_count
+  nt_w_xg
+    -> home_nt_w_xg, away_nt_w_xg, diff_nt_w_xg
+  nt_w_goals
+    -> home_nt_w_goals, away_nt_w_goals, diff_nt_w_goals
+  nt_w_shots
+    -> home_nt_w_shots, away_nt_w_shots, diff_nt_w_shots
+  nt_w_shots_on_target
+    -> home_nt_w_shots_on_target, away_nt_w_shots_on_target, diff_nt_w_shots_on_target
+  nt_w_key_passes
+    -> home_nt_w_key_passes, away_nt_w_key_passes, diff_nt_w_key_passes
+  nt_w_through_balls
+    -> home_nt_w_through_balls, away_nt_w_through_balls, diff_nt_w_through_balls
+  nt_w_crosses
+    -> home_nt_w_crosses, away_nt_w_crosses, diff_nt_w_crosses
+  nt_w_progressive_passes
+    -> home_nt_w_progressive_passes, away_nt_w_progressive_passes, diff_nt_w_progressive_passes
+  nt_w_dribble_attempts
+    -> home_nt_w_dribble_attempts, away_nt_w_dribble_attempts, diff_nt_w_dribble_attempts
+  nt_w_dribble_success
+    -> home_nt_w_dribble_success, away_nt_w_dribble_success, diff_nt_w_dribble_success
+  nt_w_carries_count
+    -> home_nt_w_carries_count, away_nt_w_carries_count, diff_nt_w_carries_count
+  nt_w_progressive_carry_distance
+    -> home_nt_w_progressive_carry_distance, away_nt_w_progressive_carry_distance, diff_nt_w_progressive_carry_distance
+  nt_w_interceptions
+    -> home_nt_w_interceptions, away_nt_w_interceptions, diff_nt_w_interceptions
+  nt_w_blocks
+    -> home_nt_w_blocks, away_nt_w_blocks, diff_nt_w_blocks
+  nt_w_clearances
+    -> home_nt_w_clearances, away_nt_w_clearances, diff_nt_w_clearances
+  nt_w_pressures
+    -> home_nt_w_pressures, away_nt_w_pressures, diff_nt_w_pressures
+  nt_w_counter_pressures
+    -> home_nt_w_counter_pressures, away_nt_w_counter_pressures, diff_nt_w_counter_pressures
+  nt_w_tackle_attempts
+    -> home_nt_w_tackle_attempts, away_nt_w_tackle_attempts, diff_nt_w_tackle_attempts
+  nt_w_tackles_won
+    -> home_nt_w_tackles_won, away_nt_w_tackles_won, diff_nt_w_tackles_won
+  nt_w_goalkeeper_saves
+    -> home_nt_w_goalkeeper_saves, away_nt_w_goalkeeper_saves, diff_nt_w_goalkeeper_saves
+
+## 明星 / 阵容深度 (6 base names)
+  star_top3_xg
+    -> home_star_top3_xg, away_star_top3_xg, diff_star_top3_xg
+  star_top_scorer_share
+    -> home_star_top_scorer_share, away_star_top_scorer_share, diff_star_top_scorer_share
+  star_xg_gini
+    -> home_star_xg_gini, away_star_xg_gini, diff_star_xg_gini
+  star_max_dribbles
+    -> home_star_max_dribbles, away_star_max_dribbles, diff_star_max_dribbles
+  squad_starters
+    -> home_squad_starters, away_squad_starters, diff_squad_starters
+  squad_depth
+    -> home_squad_depth, away_squad_depth, diff_squad_depth
+
+## 位置质量 (per90) (7 base names)
+  pos_fw_xg_per90
+    -> home_pos_fw_xg_per90, away_pos_fw_xg_per90, diff_pos_fw_xg_per90
+  pos_fw_dribbles_per90
+    -> home_pos_fw_dribbles_per90, away_pos_fw_dribbles_per90, diff_pos_fw_dribbles_per90
+  pos_fw_attack_score
+    -> home_pos_fw_attack_score, away_pos_fw_attack_score, diff_pos_fw_attack_score
+  pos_df_defense_per90
+    -> home_pos_df_defense_per90, away_pos_df_defense_per90, diff_pos_df_defense_per90
+  pos_mf_creative_per90
+    -> home_pos_mf_creative_per90, away_pos_mf_creative_per90, diff_pos_mf_creative_per90
+  pos_mf_carries_per90
+    -> home_pos_mf_carries_per90, away_pos_mf_carries_per90, diff_pos_mf_carries_per90
+  pos_gk_saves
+    -> home_pos_gk_saves, away_pos_gk_saves, diff_pos_gk_saves
+
+## 球队风格 (per90) (2 base names)
+  team_pressures_per90
+    -> home_team_pressures_per90, away_team_pressures_per90, diff_team_pressures_per90
+  team_carries_per90
+    -> home_team_carries_per90, away_team_carries_per90, diff_team_carries_per90
+
+## 俱乐部化学反应 (同俱乐部队友) (3 base names)
+  club_max_cluster_ratio
+    -> home_club_max_cluster_ratio, away_club_max_cluster_ratio, diff_club_max_cluster_ratio
+  club_pair_density
+    -> home_club_pair_density, away_club_pair_density, diff_club_pair_density
+  club_distinct_clubs
+    -> home_club_distinct_clubs, away_club_distinct_clubs, diff_club_distinct_clubs
+
+## 对位 (仅比赛级, 无 home/away 前缀) (5 base names)
+  matchup_home_fw_vs_away_df  [ok]
+  matchup_away_fw_vs_home_df  [ok]
+  matchup_mf_creative_diff  [ok]
+  matchup_press_vs_carry  [ok]
+  matchup_carry_vs_press  [ok]
+
+
+Total columns in X: 188

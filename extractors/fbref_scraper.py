@@ -92,6 +92,10 @@ TARGET_SEASONS = [
     "2019-2020",
     "2020-2021",
     "2021-2022",
+    "2022-2023",
+    "2023-2024",
+    "2024-2025",
+    "2025-2026",
 ]
 
 # Season end dates for as_of_date (approximate end of each European season).
@@ -103,6 +107,10 @@ SEASON_END_DATES = {
     "2019-2020": date(2020, 8, 1),
     "2020-2021": date(2021, 6, 1),
     "2021-2022": date(2022, 6, 1),
+    "2022-2023": date(2023, 6, 1),
+    "2023-2024": date(2024, 6, 1),
+    "2024-2025": date(2025, 6, 1),
+    "2025-2026": date(2026, 6, 1),
 }
 
 # World Cup scraping target.
@@ -193,13 +201,6 @@ def _flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Flatten MultiIndex columns to single-level strings for easier access.
     将 MultiIndex 列扁平化为单层字符串，方便取值。
-
-    Strategy / 策略:
-    - ('Performance', 'Gls') → 'Gls'   (use the leaf-level name)
-    - ('nation', '') → 'nation'          (drop empty sub-levels)
-    If duplicate leaf names exist (e.g. 'Gls' appears under both
-    'Performance' and 'Per 90 Minutes'), prefix with the group name.
-    如果叶子名重复，加上组名前缀以区分。
     """
     if not isinstance(df.columns, pd.MultiIndex):
         return df
@@ -290,64 +291,91 @@ def _get_missing_players_for_season(
 # FBref scraping with retry / FBref 爬取（带重试）
 # ---------------------------------------------------------------------------
 
-def _scrape_league_with_retry(league: str, season: str) -> pd.DataFrame | None:
-    """
-    Scrape one league's player stats from FBref, with automatic retry on
-    rate-limit errors.
-    爬取一个联赛的球员统计数据，遇到限速错误时自动重试。
-
-    Retry policy / 重试策略:
-    - On HTTP 429 or rate-limit exception → sleep RATE_LIMIT_BACKOFF (600s),
-      then retry up to MAX_RETRIES times.
-      遇到 429 → 强制休眠 600 秒，然后重试，最多 MAX_RETRIES 次。
-    - On other exceptions → log and return None immediately (no retry).
-      其他异常 → 记录日志，直接返回 None（不重试）。
-
-    Parameters
-    ----------
-    league : str
-        soccerdata league ID, e.g. "ENG-Premier League".
-    season : str
-        Season string, e.g. "2022-2023".
-
-    Returns
-    -------
-    pd.DataFrame | None
-        Player-level season stats, or None on unrecoverable failure.
-    """
+def _read_stat_type_with_retry(league: str, season: str, stat_type: str) -> pd.DataFrame | None:
+    """Fetch one FBref player stat table (standard / shooting / misc)."""
     import soccerdata as sd
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             fbref = sd.FBref(leagues=league, seasons=season)
-            stats_df = fbref.read_player_season_stats(stat_type="standard")
-            # Flatten MultiIndex columns so downstream code can use simple
-            # string keys like "Gls" instead of ('Performance', 'Gls').
-            # 扁平化 MultiIndex 列，让下游代码可以用简单字符串键取值。
-            return _flatten_columns(stats_df)
-
+            stats_df = fbref.read_player_season_stats(stat_type=stat_type)
+            return _flatten_columns(stats_df.reset_index())
         except Exception as exc:
             if _is_rate_limit_error(exc):
-                # Rate-limited — enter mandatory cooldown.
-                # 被限速——进入强制冷却。
                 print(
-                    f"  [HTTP 429] Rate-limited on {league} "
+                    f"  [HTTP 429] Rate-limited on {league} {stat_type} "
                     f"(attempt {attempt}/{MAX_RETRIES}). "
                     f"Sleeping {RATE_LIMIT_BACKOFF}s ..."
                 )
                 time.sleep(RATE_LIMIT_BACKOFF)
             else:
-                # Non-rate-limit error — no point retrying.
-                # 非限速错误——重试无意义，直接放弃该联赛。
-                print(f"  [ERROR] Failed to scrape {league} {season}: {exc}")
+                print(f"  [ERROR] Failed {league} {season} {stat_type}: {exc}")
                 return None
-
-    # Exhausted all retries.
-    # 所有重试次数用尽。
-    print(
-        f"  [ABORT] Gave up on {league} after {MAX_RETRIES} rate-limit retries."
-    )
+    print(f"  [ABORT] Gave up on {league} {stat_type} after {MAX_RETRIES} retries.")
     return None
+
+
+def _estimate_xg_from_shooting(row: pd.Series) -> float | None:
+    """
+    xG proxy from shots — soccerdata no longer exposes FBref xG column.
+    射门数据估算 xG（soccerdata 标准表已不含 xG 列）。
+    """
+    sh = _safe_float(_get_col(row, "Sh"))
+    sot = _safe_float(_get_col(row, "SoT"))
+    if sh is None and sot is None:
+        return None
+    sh = sh or 0.0
+    sot = sot or 0.0
+    off_target = max(sh - sot, 0.0)
+    return 0.32 * sot + 0.04 * off_target
+
+
+def _extract_league_stat_fields(row: pd.Series) -> dict[str, object]:
+    """Map merged FBref row → player_stats_league columns."""
+    xg_raw = _safe_float(_get_col(row, "xG", "npxG", "Expected_xG"))
+    xg = xg_raw if xg_raw is not None else _estimate_xg_from_shooting(row)
+    return {
+        "goals": _safe_int(_get_col(row, "Gls", "goals")),
+        "assists": _safe_int(_get_col(row, "Ast", "assists")),
+        "minutes_played": _safe_int(_get_col(row, "Min", "minutes")),
+        "xg": xg,
+        "interceptions": _safe_int(_get_col(row, "Int", "Performance_Int")),
+        "tackles_won": _safe_int(_get_col(row, "TklW", "Performance_TklW", "Tkl")),
+    }
+
+
+def _merge_league_stat_frames(
+    standard_df: pd.DataFrame,
+    shooting_df: pd.DataFrame | None,
+    misc_df: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """Merge standard + shooting + misc on player name."""
+    base = standard_df.copy()
+    if "player" not in base.columns:
+        return base
+
+    if shooting_df is not None and "player" in shooting_df.columns:
+        sh_cols = [c for c in ["player", "Sh", "SoT", "SoT%"] if c in shooting_df.columns]
+        base = base.merge(shooting_df[sh_cols], on="player", how="left", suffixes=("", "_sh"))
+
+    if misc_df is not None and "player" in misc_df.columns:
+        mi_cols = [c for c in ["player", "Int", "TklW"] if c in misc_df.columns]
+        base = base.merge(misc_df[mi_cols], on="player", how="left", suffixes=("", "_mi"))
+
+    return base
+
+
+def _scrape_league_with_retry(league: str, season: str) -> pd.DataFrame | None:
+    """
+    Scrape standard + shooting + misc player stats and merge.
+    爬取标准/射门/杂项表并合并。
+    """
+    standard = _read_stat_type_with_retry(league, season, "standard")
+    if standard is None or standard.empty:
+        return None
+    shooting = _read_stat_type_with_retry(league, season, "shooting")
+    misc = _read_stat_type_with_retry(league, season, "misc")
+    return _merge_league_stat_frames(standard, shooting, misc)
 
 
 # ---------------------------------------------------------------------------
@@ -439,10 +467,12 @@ def scrape_and_store_league_stats(
                 print(f"  Got {len(league_df)} player rows.")
 
                 for idx, row in league_df.iterrows():
-                    try:
-                        player_name = str(idx[-1]) if isinstance(idx, tuple) else str(idx)
-                    except Exception:
-                        continue
+                    player_name = str(row.get("player", "")).strip()
+                    if not player_name or player_name == "nan":
+                        try:
+                            player_name = str(idx[-1]) if isinstance(idx, tuple) else str(idx)
+                        except Exception:
+                            continue
                     if not player_name or player_name == "nan":
                         continue
 
@@ -454,8 +484,6 @@ def scrape_and_store_league_stats(
                         stats["players_skipped_checkpoint"] += 1
                         continue
 
-                    # Extract and store position on the Player record (once).
-                    # 提取位置信息并写入球员记录（只写一次）。
                     if result.internal_player_id not in players_with_position:
                         pos_raw = _get_col(row, "pos", "Pos")
                         if pos_raw:
@@ -467,18 +495,19 @@ def scrape_and_store_league_stats(
                                     players_with_position.add(result.internal_player_id)
                                     stats["positions_updated"] += 1
 
+                    fields = _extract_league_stat_fields(row)
                     stat_row = PlayerStatsLeague(
                         internal_player_id=result.internal_player_id,
                         season=season,
                         as_of_date=season_date,
-                        xg=None,
-                        goals=_safe_int(_get_col(row, "Gls", "goals")),
-                        assists=_safe_int(_get_col(row, "Ast", "assists")),
+                        xg=fields["xg"],
+                        goals=fields["goals"],
+                        assists=fields["assists"],
                         passes_completed=None,
                         passes_attempted=None,
-                        interceptions=None,
-                        tackles_won=None,
-                        minutes_played=_safe_int(_get_col(row, "Min", "minutes")),
+                        interceptions=fields["interceptions"],
+                        tackles_won=fields["tackles_won"],
+                        minutes_played=fields["minutes_played"],
                     )
                     session.add(stat_row)
                     stats["players_matched"] += 1
@@ -528,6 +557,99 @@ def scrape_and_store_league_stats(
     print(f"  Batch commits:         {stats['batch_commits']}")
     print(f"{'='*60}")
 
+    return stats
+
+
+def backfill_advanced_league_stats(
+    seasons: list[str] | None = None,
+) -> dict[str, int]:
+    """
+    Update xG / defensive fields on existing player_stats_league rows.
+    为已有联赛 stat 行回填 xG 与防守字段。
+    """
+    if seasons is None:
+        seasons = ["2024-2025", "2025-2026"]
+
+    engine = create_engine(DB_URL, echo=False)
+    stats = {
+        "seasons_processed": 0,
+        "leagues_scraped": 0,
+        "rows_updated": 0,
+        "rows_missing": 0,
+        "players_unmatched": 0,
+    }
+
+    with Session(engine) as session:
+        all_players_map = {
+            row.full_name: row.internal_player_id
+            for row in session.query(Player.full_name, Player.internal_player_id).all()
+        }
+        matcher = PlayerMatcher(all_players_map)
+        print(f"[Backfill] Matcher loaded with {matcher.roster_size} DB players.")
+
+        for season in seasons:
+            print(f"\n{'#'*60}\n# BACKFILL {season}\n{'#'*60}")
+            pending = 0
+
+            for league in TARGET_LEAGUES:
+                print(f"\n[Backfill] {league} ({season})...")
+                _rate_limit()
+                league_df = _scrape_league_with_retry(league, season)
+                if league_df is None or league_df.empty:
+                    print("  [skip] no data")
+                    continue
+                stats["leagues_scraped"] += 1
+
+                for _, row in league_df.iterrows():
+                    player_name = str(row.get("player", "")).strip()
+                    if not player_name or player_name == "nan":
+                        continue
+
+                    result = matcher.match_name(player_name, threshold=80)
+                    if result.is_new:
+                        stats["players_unmatched"] += 1
+                        continue
+
+                    existing = (
+                        session.query(PlayerStatsLeague)
+                        .filter(
+                            PlayerStatsLeague.internal_player_id == result.internal_player_id,
+                            PlayerStatsLeague.season == season,
+                        )
+                        .first()
+                    )
+                    if existing is None:
+                        stats["rows_missing"] += 1
+                        continue
+
+                    fields = _extract_league_stat_fields(row)
+                    existing.xg = fields["xg"]
+                    existing.interceptions = fields["interceptions"]
+                    existing.tackles_won = fields["tackles_won"]
+                    if fields["goals"] is not None:
+                        existing.goals = fields["goals"]
+                    if fields["assists"] is not None:
+                        existing.assists = fields["assists"]
+                    if fields["minutes_played"] is not None:
+                        existing.minutes_played = fields["minutes_played"]
+                    stats["rows_updated"] += 1
+                    pending += 1
+                    if pending >= BATCH_SIZE:
+                        session.commit()
+                        pending = 0
+
+                if pending:
+                    session.commit()
+                    pending = 0
+                _rate_limit()
+
+            stats["seasons_processed"] += 1
+
+    print(f"\n{'='*60}")
+    print("[Backfill] Complete:")
+    for k, v in stats.items():
+        print(f"  {k}: {v}")
+    print(f"{'='*60}")
     return stats
 
 
@@ -700,7 +822,18 @@ if __name__ == "__main__":
         "--season",
         type=str,
         default=None,
-        help="Scrape a single season only, e.g. '2021-2022'. Default: all 4 seasons.",
+        help="Scrape a single season only, e.g. '2022-2023'.",
+    )
+    cli.add_argument(
+        "--seasons",
+        nargs="+",
+        default=None,
+        help="Multiple seasons for scrape or backfill.",
+    )
+    cli.add_argument(
+        "--backfill-advanced",
+        action="store_true",
+        help="Fill xG/interceptions/tackles on existing league stat rows.",
     )
     cli.add_argument(
         "--world-cup",
@@ -714,12 +847,19 @@ if __name__ == "__main__":
     )
     args = cli.parse_args()
 
-    seasons_to_scrape = [args.season] if args.season else None
+    if args.seasons:
+        seasons_list = args.seasons
+    elif args.season:
+        seasons_list = [args.season]
+    else:
+        seasons_list = None
 
-    if args.all:
+    if args.backfill_advanced:
+        backfill_advanced_league_stats(seasons=seasons_list)
+    elif args.all:
         scrape_and_store_world_cup_stats()
-        scrape_and_store_league_stats(limit=args.limit, seasons=seasons_to_scrape)
+        scrape_and_store_league_stats(limit=args.limit, seasons=seasons_list)
     elif args.world_cup:
         scrape_and_store_world_cup_stats()
     else:
-        scrape_and_store_league_stats(limit=args.limit, seasons=seasons_to_scrape)
+        scrape_and_store_league_stats(limit=args.limit, seasons=seasons_list)

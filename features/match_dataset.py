@@ -73,6 +73,24 @@ TOURNAMENTS = [
         "latest_league_season": "2021-2022",
         "prior_national_comps": ["FIFA World Cup 2018", "UEFA Euro 2020"],
     },
+    {
+        "name": "FIFA World Cup 2026",
+        "short": "WC2026",
+        "competition_id": 43,
+        "season_id": None,  # TBD — StatsBomb season_id assigned after tournament
+        "elo_key": "wc2026",
+        "league_seasons": {
+            "2022-2023": 0.3,
+            "2023-2024": 0.5,
+            "2024-2025": 0.8,
+            "2025-2026": 1.0,
+        },
+        "latest_league_season": "2025-2026",
+        "prior_national_comps": [
+            "FIFA World Cup 2018", "UEFA Euro 2020", "FIFA World Cup 2022",
+        ],
+        "is_future": True,
+    },
 ]
 
 KNOCKOUT_STAGES = {
@@ -209,6 +227,9 @@ def build_match_dataset() -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
     all_meta = []
 
     for t in TOURNAMENTS:
+        if t.get("is_future") or t.get("season_id") is None:
+            print(f"\n[Dataset] === {t['name']} === (future — skipped for training)")
+            continue
         print(f"\n[Dataset] === {t['name']} ===")
         print(f"  Loading matches...")
         match_df = _load_tournament_matches(

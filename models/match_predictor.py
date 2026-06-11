@@ -174,6 +174,7 @@ def train_and_evaluate() -> dict:
         "FIFA World Cup 2018": "wc2018",
         "UEFA Euro 2020": "euro2020",
         "FIFA World Cup 2022": "wc2022",
+        "FIFA World Cup 2026": "wc2026",
     }
     elo_caches = {k: get_pre_tournament_elo(v) for k, v in elo_map.items()}
 

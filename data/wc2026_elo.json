@@ -1,0 +1,249 @@
+{
+    "_meta": {
+        "source": "eloratings.net / international-football.net",
+        "snapshot_date": "2025-06-10",
+        "description": "Pre-tournament Elo ratings for WC2026 (48 teams)."
+    },
+    "teams": {
+        "Spain": {
+            "elo": 2157,
+            "rank": 1,
+            "confederation": "UEFA"
+        },
+        "Argentina": {
+            "elo": 2132,
+            "rank": 2,
+            "confederation": "CONMEBOL"
+        },
+        "France": {
+            "elo": 2056,
+            "rank": 3,
+            "confederation": "UEFA"
+        },
+        "Portugal": {
+            "elo": 2030,
+            "rank": 4,
+            "confederation": "UEFA"
+        },
+        "Brazil": {
+            "elo": 2001,
+            "rank": 5,
+            "confederation": "CONMEBOL"
+        },
+        "England": {
+            "elo": 1984,
+            "rank": 6,
+            "confederation": "UEFA"
+        },
+        "Netherlands": {
+            "elo": 1975,
+            "rank": 7,
+            "confederation": "UEFA"
+        },
+        "Colombia": {
+            "elo": 1951,
+            "rank": 8,
+            "confederation": "CONMEBOL"
+        },
+        "Croatia": {
+            "elo": 1927,
+            "rank": 9,
+            "confederation": "UEFA"
+        },
+        "Germany": {
+            "elo": 1914,
+            "rank": 10,
+            "confederation": "UEFA"
+        },
+        "Ecuador": {
+            "elo": 1905,
+            "rank": 11,
+            "confederation": "CONMEBOL"
+        },
+        "Uruguay": {
+            "elo": 1901,
+            "rank": 12,
+            "confederation": "CONMEBOL"
+        },
+        "Norway": {
+            "elo": 1866,
+            "rank": 14,
+            "confederation": "UEFA"
+        },
+        "Japan": {
+            "elo": 1855,
+            "rank": 16,
+            "confederation": "AFC"
+        },
+        "Belgium": {
+            "elo": 1847,
+            "rank": 17,
+            "confederation": "UEFA"
+        },
+        "Austria": {
+            "elo": 1845,
+            "rank": 18,
+            "confederation": "UEFA"
+        },
+        "Switzerland": {
+            "elo": 1845,
+            "rank": 18,
+            "confederation": "UEFA"
+        },
+        "Turkey": {
+            "elo": 1836,
+            "rank": 22,
+            "confederation": "UEFA"
+        },
+        "Paraguay": {
+            "elo": 1824,
+            "rank": 23,
+            "confederation": "CONMEBOL"
+        },
+        "Mexico": {
+            "elo": 1813,
+            "rank": 24,
+            "confederation": "CONCACAF"
+        },
+        "Morocco": {
+            "elo": 1812,
+            "rank": 25,
+            "confederation": "CAF"
+        },
+        "Iran": {
+            "elo": 1800,
+            "rank": 26,
+            "confederation": "AFC"
+        },
+        "Canada": {
+            "elo": 1786,
+            "rank": 29,
+            "confederation": "CONCACAF"
+        },
+        "Senegal": {
+            "elo": 1784,
+            "rank": 30,
+            "confederation": "CAF"
+        },
+        "Australia": {
+            "elo": 1774,
+            "rank": 31,
+            "confederation": "AFC"
+        },
+        "South Korea": {
+            "elo": 1768,
+            "rank": 32,
+            "confederation": "AFC"
+        },
+        "Sweden": {
+            "elo": 1761,
+            "rank": 33,
+            "confederation": "UEFA"
+        },
+        "Czech Republic": {
+            "elo": 1749,
+            "rank": 35,
+            "confederation": "UEFA"
+        },
+        "Panama": {
+            "elo": 1729,
+            "rank": 38,
+            "confederation": "CONCACAF"
+        },
+        "Scotland": {
+            "elo": 1718,
+            "rank": 40,
+            "confederation": "UEFA"
+        },
+        "Uzbekistan": {
+            "elo": 1706,
+            "rank": 42,
+            "confederation": "AFC"
+        },
+        "Algeria": {
+            "elo": 1705,
+            "rank": 43,
+            "confederation": "CAF"
+        },
+        "United States": {
+            "elo": 1694,
+            "rank": 45,
+            "confederation": "CONCACAF"
+        },
+        "Egypt": {
+            "elo": 1668,
+            "rank": 49,
+            "confederation": "CAF"
+        },
+        "Jordan": {
+            "elo": 1622,
+            "rank": 57,
+            "confederation": "AFC"
+        },
+        "Tunisia": {
+            "elo": 1613,
+            "rank": 58,
+            "confederation": "CAF"
+        },
+        "New Zealand": {
+            "elo": 1603,
+            "rank": 60,
+            "confederation": "OFC"
+        },
+        "Saudi Arabia": {
+            "elo": 1590,
+            "rank": 63,
+            "confederation": "AFC"
+        },
+        "Côte d'Ivoire": {
+            "elo": 1587,
+            "rank": 65,
+            "confederation": "CAF"
+        },
+        "DR Congo": {
+            "elo": 1584,
+            "rank": 66,
+            "confederation": "CAF"
+        },
+        "South Africa": {
+            "elo": 1559,
+            "rank": 70,
+            "confederation": "CAF"
+        },
+        "Iraq": {
+            "elo": 1548,
+            "rank": 73,
+            "confederation": "AFC"
+        },
+        "Bosnia and Herzegovina": {
+            "elo": 1523,
+            "rank": 76,
+            "confederation": "UEFA"
+        },
+        "Cape Verde": {
+            "elo": 1518,
+            "rank": 77,
+            "confederation": "CAF"
+        },
+        "Qatar": {
+            "elo": 1517,
+            "rank": 78,
+            "confederation": "AFC"
+        },
+        "Haiti": {
+            "elo": 1499,
+            "rank": 81,
+            "confederation": "CONCACAF"
+        },
+        "Ghana": {
+            "elo": 1479,
+            "rank": 86,
+            "confederation": "CAF"
+        },
+        "Curacao": {
+            "elo": 1390,
+            "rank": 103,
+            "confederation": "CONCACAF"
+        }
+    }
+}
