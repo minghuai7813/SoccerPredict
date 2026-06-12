@@ -29,7 +29,21 @@ from models.market_odds import (
 )
 
 SCHEDULE_PATH = _PROJECT_ROOT / "data" / "wc2026_schedule.json"
+RESULTS_PATH = _PROJECT_ROOT / "data" / "wc2026_results.json"
 LABEL = {1: "Home", 0: "Draw", -1: "Away"}
+
+
+def _load_recorded_results() -> dict[str, dict]:
+    """match_key -> result row, empty if ledger missing."""
+    if not RESULTS_PATH.exists():
+        return {}
+    import json
+    data = json.loads(RESULTS_PATH.read_text(encoding="utf-8"))
+    return {r["match_key"]: r for r in data.get("results", [])}
+
+
+def _match_key(m: dict) -> str:
+    return f"{m['date']}|{m['group']}|{m['home']}|{m['away']}"
 
 
 def load_schedule() -> dict:
@@ -72,6 +86,7 @@ def predict_match_elo(
 
 
 def _sim_group(group_name, matches, elo_data):
+    recorded = _load_recorded_results()
     schedule = load_schedule()
     teams_in_group = schedule["groups"][group_name]
     table = {
@@ -79,21 +94,30 @@ def _sim_group(group_name, matches, elo_data):
         for t in teams_in_group
     }
     for m in matches:
-        pred = predict_match_elo(m["home"], m["away"], elo_data)
-        lh, la = pred["lambdas"]
-        exp_h, exp_a = round(lh), round(la)
-        home, away = m["home"], m["away"]
+        key = _match_key(m)
+        rec = recorded.get(key)
+        if rec:
+            home, away = m["home"], m["away"]
+            hg, ag = rec["home_goals"], rec["away_goals"]
+            exp_h, exp_a = hg, ag
+            pick = rec["result"]
+        else:
+            pred = predict_match_elo(m["home"], m["away"], elo_data)
+            lh, la = pred["lambdas"]
+            exp_h, exp_a = round(lh), round(la)
+            home, away = m["home"], m["away"]
+            pick = pred["pick"]
         if home not in table or away not in table:
             continue
         table[home]["gf"] += exp_h
         table[home]["ga"] += exp_a
         table[away]["gf"] += exp_a
         table[away]["ga"] += exp_h
-        if pred["pick"] == 1:
+        if pick == 1:
             table[home]["pts"] += 3
             table[home]["w"] += 1
             table[away]["l"] += 1
-        elif pred["pick"] == -1:
+        elif pick == -1:
             table[away]["pts"] += 3
             table[away]["w"] += 1
             table[home]["l"] += 1
@@ -148,6 +172,7 @@ def main():
         return
 
     current_date = ""
+    recorded = _load_recorded_results()
     for m in matches:
         if m["date"] != current_date:
             current_date = m["date"]
@@ -157,6 +182,7 @@ def main():
             print("=" * 72)
 
         pred = predict_match_elo(m["home"], m["away"], elo_data)
+        rec = recorded.get(_match_key(m))
         prob_h = pred["probs"][1]
         prob_d = pred["probs"][0]
         prob_a = pred["probs"][-1]
@@ -189,6 +215,11 @@ def main():
             "    xG: %.2f - %.2f  |  Most likely: %d-%d (%.1f%%)"
             % (lh, la, top1[0], top1[1], top1[2] * 100)
         )
+        if rec:
+            print(
+                "    ** FT: %d-%d (recorded) **"
+                % (rec["home_goals"], rec["away_goals"])
+            )
 
     if args.standings or (args.group and not args.matchday):
         if args.group:
@@ -200,7 +231,7 @@ def main():
         print("")
         print("")
         print("=" * 72)
-        print("  PREDICTED GROUP STANDINGS")
+        print("  ACTUAL + PROJECTED GROUP STANDINGS (finished games use real scores)")
         print("=" * 72)
 
         for g in groups_to_show:

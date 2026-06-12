@@ -1,0 +1,79 @@
+{
+  "_meta": {
+    "tournament": "FIFA World Cup 2026",
+    "format_version": 1,
+    "description": "One row per finished WC2026 fixture.",
+    "updated_at": "2026-06-11T22:59:23.495702+00:00"
+  },
+  "results": [
+    {
+      "match_key": "2026-06-11|A|Mexico|South Africa",
+      "matchday": 1,
+      "date": "2026-06-11",
+      "group": "A",
+      "home": "Mexico",
+      "away": "South Africa",
+      "venue": "Mexico City",
+      "kickoff_et": "15:00",
+      "status": "finished",
+      "home_goals": 2,
+      "away_goals": 0,
+      "result": 1,
+      "goals": [
+        {
+          "minute": 8,
+          "team": "home",
+          "scorer": "Julian Quinones",
+          "assister": "Erik Lira"
+        },
+        {
+          "minute": 67,
+          "team": "home",
+          "scorer": "Raul Jimenez",
+          "assister": "Roberto Alvarado"
+        }
+      ],
+      "red_cards": [
+        {
+          "team": "away",
+          "player": "Sphephelo Sithole"
+        },
+        {
+          "team": "away",
+          "player": "Themba Zwane"
+        },
+        {
+          "team": "home",
+          "player": "Cesar Montes",
+          "note": "stoppage time"
+        }
+      ],
+      "recorded_at": "2026-06-11T23:00:00+00:00",
+      "source": "ESPN / Sky Sports / FIFA",
+      "notes": "WC2026 opener. Three red cards.",
+      "oracle_prediction": {
+        "recorded_before_kickoff": true,
+        "elo_poisson": {
+          "pick": 1,
+          "top_scoreline": "2-0",
+          "hit": true
+        },
+        "elo_1x2": {
+          "pick": 1,
+          "hit": true
+        },
+        "rf_model": {
+          "pick": -1,
+          "hit": false
+        },
+        "upset_gating": {
+          "pick": -1,
+          "p_upset": 0.613,
+          "hit": false
+        },
+        "consensus_pick": 1,
+        "consensus_hit": true
+      }
+    }
+  ]
+}
